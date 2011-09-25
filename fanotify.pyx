@@ -9,6 +9,9 @@ cdef extern from "unistd.h":
     ssize_t read(int fd, void *buf, size_t count)
     int close(int fd)
 
+cdef extern from "errno.h":
+    int errno
+
 cdef extern from "sys/fanotify.h":
     int fanotify_init(unsigned int __flags, unsigned int __event_f_flags)
     int fanotify_mark(int __fanotify_fd, unsigned int __flags,
@@ -50,44 +53,46 @@ cdef extern from "linux/fanotify.h":
     cdef struct fanotify_event_metadata:
         int fd
 
-#XXX raise OSError when things go bad
 
 cdef class FileAccessNotifier:
     cdef int fan_fd
 
     def __cinit__(self):
         self.fan_fd = fanotify_init(FAN_CLASS_NOTIF, O_RDONLY | O_LARGEFILE)
-        print self.fan_fd
-        #XXX check
+        check_for_cerror(self.fan_fd)
 
     def watch_filesystem(self, char *path):
         #XXX this should take the mask
         event_mask = FAN_ACCESS | FAN_MODIFY | FAN_CLOSE_WRITE | FAN_CLOSE_NOWRITE | FAN_OPEN
         result = fanotify_mark(self.fan_fd, FAN_MARK_ADD | FAN_MARK_MOUNT, event_mask, AT_FDCWD, path)
-        #XXX check
-        print result
+        check_for_cerror(result)
 
     def read_event(self):
         cdef fanotify_event_metadata metadata
         num_bytes = read(self.fan_fd, &metadata, sizeof(fanotify_event_metadata));
-        print num_bytes, sizeof(fanotify_event_metadata)
+        if num_bytes < sizeof(fanotify_event_metadata):
+            raise OSError("incomplete read")
 
         if metadata.fd >= 0:
             #XXX change to native C
             path = "/proc/self/fd/%d" % metadata.fd
-            print os.readlink(path)
+            out = os.readlink(path)
         else:
-            print "?:"
+            out = "?:"
 
         if metadata.fd >= 0 and close(metadata.fd) != 0:
-            print 'error'   #XXX
-        
+            raise OSError('closing event file descriptor failed')
+
+        return out
 
     def __iter__(self):
         for x in (1, 2, 3):
             yield x
     
-
+def check_for_cerror(result):
+    if result < 0:
+        raise OSError(os.strerror(errno))
+        
 
 # struct fanotify_event_metadata {
 #         __u32 event_len;
