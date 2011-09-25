@@ -61,14 +61,17 @@ cdef class FileAccessNotifier:
         self.fan_fd = fanotify_init(FAN_CLASS_NOTIF, O_RDONLY | O_LARGEFILE)
         check_for_cerror(self.fan_fd)
 
-    def watch_filesystem(self, char *path):
-        #XXX this should take the mask
-        event_mask = FAN_ACCESS | FAN_MODIFY | FAN_CLOSE_WRITE | FAN_CLOSE_NOWRITE | FAN_OPEN
+    def watch_mount(self, char *path):
+        #XXX this should take the mask, these need to be exposed
+        event_mask = FAN_MODIFY | FAN_CLOSE_WRITE
         result = fanotify_mark(self.fan_fd, FAN_MARK_ADD | FAN_MARK_MOUNT, event_mask, AT_FDCWD, path)
         check_for_cerror(result)
 
     def read_event(self):
+        #XXX: non-blocking option
         cdef fanotify_event_metadata metadata
+
+        #XXX bigger reads?
         num_bytes = read(self.fan_fd, &metadata, sizeof(fanotify_event_metadata));
         if num_bytes < sizeof(fanotify_event_metadata):
             raise OSError("incomplete read")
@@ -80,15 +83,12 @@ cdef class FileAccessNotifier:
         else:
             out = "?:"
 
+        #XXX: parse and return the event flags
+
         if metadata.fd >= 0 and close(metadata.fd) != 0:
             raise OSError('closing event file descriptor failed')
-
         return out
 
-    def __iter__(self):
-        for x in (1, 2, 3):
-            yield x
-    
 def check_for_cerror(result):
     if result < 0:
         raise OSError(os.strerror(errno))
