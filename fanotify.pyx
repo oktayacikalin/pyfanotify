@@ -61,9 +61,15 @@ cdef class FileAccessNotifier:
         self.fan_fd = fanotify_init(FAN_CLASS_NOTIF, O_RDONLY | O_LARGEFILE)
         check_for_cerror(self.fan_fd)
 
+    def watch_dir(self, char *path):
+        #XXX this should take the mask, these need to be exposed
+        event_mask = FAN_MODIFY | FAN_CLOSE_WRITE | FAN_EVENT_ON_CHILD | FAN_ONDIR
+        result = fanotify_mark(self.fan_fd, FAN_MARK_ADD, event_mask, AT_FDCWD, path)
+        check_for_cerror(result)
+
     def watch_mount(self, char *path):
         #XXX this should take the mask, these need to be exposed
-        event_mask = FAN_MODIFY | FAN_CLOSE_WRITE
+        event_mask = FAN_MODIFY | FAN_CLOSE_WRITE | FAN_EVENT_ON_CHILD
         result = fanotify_mark(self.fan_fd, FAN_MARK_ADD | FAN_MARK_MOUNT, event_mask, AT_FDCWD, path)
         check_for_cerror(result)
 
